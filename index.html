@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YGS STUDIO</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        body { background-color: #030303; color: #fafafa; font-family: 'Inter', sans-serif; letter-spacing: -0.02em; }
+        .bg-glow { background: radial-gradient(circle at 50% -20%, #1e1b4b 0%, #030303 65%); }
+        .glass { background: rgba(255, 255, 255, 0.02); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        [v-cloak] { display: none; }
+        
+        .btn-primary { background: #fff; color: #000; font-weight: 800; transition: all 0.2s ease; }
+        .btn-primary:hover:not(:disabled) { background: #e4e4e7; transform: translateY(-1px); }
+
+        .progress-container { height: 2px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+        .progress-bar { height: 100%; background: #6366f1; transition: width 0.4s ease; box-shadow: 0 0 15px rgba(99, 102, 241, 0.6); }
+    </style>
+</head>
+<body class="bg-glow min-h-screen pb-20">
+    <div id="app" v-cloak>
+        <nav class="sticky top-0 z-50 border-b border-white/5 bg-black/60 backdrop-blur-xl p-5 px-10 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="px-3 py-1 bg-white text-black font-black text-[11px] tracking-tighter">YGS</div>
+                <span class="text-[10px] font-bold tracking-[0.2em] uppercase opacity-40">Studio</span>
+            </div>
+        </nav>
+
+        <main class="max-w-6xl mx-auto pt-20 px-6">
+            <div class="mb-12">
+                <h1 class="text-6xl font-black tracking-tighter mb-4">Voice Converter</h1>
+                <p class="text-zinc-500 font-medium text-lg">Apply RVC models to your audio stems.</p>
+            </div>
+
+            <div v-if="loading" class="mb-12 space-y-3">
+                <div class="flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    <span>{{ loadingStatus }}</span>
+                    <span>{{ progress }}%</span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar" :style="{ width: progress + '%' }"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-8 space-y-6">
+                    <div class="glass rounded-[2rem] p-8 md:p-10 space-y-10">
+                        
+                        <div class="space-y-4">
+                            <label class="text-[10px] font-bold uppercase text-zinc-500 tracking-[0.2em]">01. Source Vocal</label>
+                            <div class="relative group border-2 border-dashed border-white/5 p-10 rounded-2xl text-center hover:bg-white/[0.02] transition-all cursor-pointer">
+                                <input type="file" @change="handleVocal" class="absolute inset-0 opacity-0 cursor-pointer">
+                                <i data-lucide="upload" class="w-6 h-6 mx-auto mb-3 text-zinc-600"></i>
+                                <p class="text-sm font-semibold text-zinc-400">
+                                    {{ vocalFile ? vocalFile.name : 'Select Audio File' }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <label class="text-[10px] font-bold uppercase text-zinc-500 tracking-[0.2em]">02. Model URL (.pth)</label>
+                            <input type="text" v-model="modelUrl" placeholder="HuggingFace resolve link" 
+                                class="w-full bg-white/[0.03] border border-white/10 rounded-xl p-5 text-sm font-medium text-white focus:border-white/40 outline-none transition-all">
+                        </div>
+
+                        <button @click="run" :disabled="loading" 
+                            class="w-full btn-primary py-6 rounded-2xl text-sm uppercase tracking-[0.2em] disabled:opacity-30">
+                            {{ loading ? 'Processing...' : 'Execute Conversion' }}
+                        </button>
+
+                        <div v-if="resultUrl" class="mt-8 p-8 bg-white/5 border border-white/10 rounded-3xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <span class="text-xs font-bold uppercase tracking-widest text-white">Output Ready</span>
+                                <a :href="resultUrl" target="_blank" class="text-xs font-bold uppercase text-zinc-400 hover:text-white transition underline">Download</a>
+                            </div>
+                            <audio :src="resultUrl" controls class="w-full"></audio>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-4 space-y-6">
+                    <div class="glass rounded-[2rem] p-8 h-fit">
+                        <h3 class="font-bold uppercase mb-10 text-[11px] text-zinc-500 tracking-[0.2em]">Parameters</h3>
+                        <div class="space-y-12">
+                            <div>
+                                <div class="flex justify-between mb-4">
+                                    <label class="text-[11px] font-bold uppercase text-zinc-400">Pitch Offset</label>
+                                    <span class="text-xs font-bold text-white">{{ pitch > 0 ? '+' : '' }}{{ pitch }}st</span>
+                                </div>
+                                <input type="range" v-model="pitch" min="-24" max="24" class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const REPLICATE_TOKEN = "r8_2KvaeE0EE3rnUOg8tqFJVWM0tNBMZ0C1ExXT4";
+                const SUPABASE_URL = "https://xlutmnnuhduhwsoldvwz.supabase.co";
+                const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsdXRtbm51aGR1aHdzb2xkdnd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5OTc0NjYsImV4cCI6MjA4NDU3MzQ2Nn0.EDSDLJPjxzmYBmkySaTkgI9qb8Et7OX1j6kY2-dY4N8";
+
+                const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+                const vocalFile = ref(null);
+                const modelUrl = ref("");
+                const pitch = ref(0);
+                const loadingStatus = ref("");
+                const loading = ref(false);
+                const progress = ref(0);
+                const resultUrl = ref(null);
+
+                const handleVocal = (e) => { vocalFile.value = e.target.files[0]; };
+
+                const run = async () => {
+                    if (!vocalFile.value || !modelUrl.value) return alert("Select files first.");
+                    loading.value = true;
+                    resultUrl.value = null;
+                    progress.value = 5;
+
+                    try {
+                        loadingStatus.value = "UPLOADING TO STORAGE";
+                        const name = `${Date.now()}_vocal.wav`;
+                        await client.storage.from('user-assets').upload(name, vocalFile.value);
+                        const vUrl = client.storage.from('user-assets').getPublicUrl(name).data.publicUrl;
+                        progress.value = 30;
+
+                        loadingStatus.value = "QUEUING AI TASK";
+                        // GitHub-friendly proxy that handles headers better
+                        const proxy = "https://api.allorigins.win/raw?url=";
+                        const api = "https://api.replicate.com/v1/predictions";
+
+                        const startResponse = await fetch(proxy + encodeURIComponent(api), {
+                            method: "POST",
+                            headers: { 
+                                "Authorization": `Token ${REPLICATE_TOKEN}`, 
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                version: "0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550",
+                                input: { song_input: vUrl, rvc_model_url: modelUrl.value, pitch_change: parseInt(pitch.value) }
+                            })
+                        });
+
+                        const startData = await startResponse.json();
+                        if (!startData.id) throw new Error(startData.detail || "Authentication Failed.");
+
+                        let predictionId = startData.id;
+                        let res = startData;
+                        progress.value = 50;
+
+                        while (res.status !== "succeeded" && res.status !== "failed") {
+                            loadingStatus.value = "AI CONVERTING";
+                            if (progress.value < 95) progress.value += 1; 
+
+                            await new Promise(r => setTimeout(r, 4000));
+                            
+                            const checkUrl = `https://api.replicate.com/v1/predictions/${predictionId}`;
+                            const checkResponse = await fetch(proxy + encodeURIComponent(checkUrl), {
+                                headers: { "Authorization": `Token ${REPLICATE_TOKEN}` }
+                            });
+                            res = await checkResponse.json();
+                        }
+
+                        if (res.status === "succeeded") {
+                            progress.value = 100;
+                            resultUrl.value = res.output;
+                        } else {
+                            throw new Error("AI engine reported a failure.");
+                        }
+
+                    } catch (e) {
+                        alert("Error: " + e.message);
+                    } finally {
+                        setTimeout(() => {
+                            loading.value = false;
+                            progress.value = 0;
+                            loadingStatus.value = "";
+                        }, 1000);
+                    }
+                };
+
+                onMounted(() => { if(window.lucide) lucide.createIcons(); });
+                return { vocalFile, modelUrl, pitch, loading, loadingStatus, progress, resultUrl, handleVocal, run };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
